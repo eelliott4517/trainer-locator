@@ -1,0 +1,5 @@
+<Bindings>
+	<Binding name="TRAINERLOCATOR_TOGGLE" header="TRAINERLOCATOR" category="ADDONS">
+		TrainerLocator_Toggle()
+	</Binding>
+</Bindings>

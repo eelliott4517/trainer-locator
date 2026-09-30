@@ -1,0 +1,62 @@
+# Push a tag like v1.0.0 (matching "## Version:" in the TOC) to publish a release: the tests
+# run, the zips are built, a GitHub release gets them, and the CurseForge zip is uploaded to
+# CurseForge when the CURSEFORGE secret (API token) and PROJECTID variable are set.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      CF_API_TOKEN: ${{ secrets.CURSEFORGE }}
+      CF_PROJECT_ID: ${{ vars.PROJECTID }}
+      CF_GAME_VERSIONS: ${{ vars.CF_GAME_VERSIONS }}
+      CF_RELEASE_TYPE: ${{ vars.CF_RELEASE_TYPE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check the tag matches the TOC version
+        run: |
+          version=$(python3 -c "import sys; sys.path.insert(0, 'tools'); import package; print(package.addon()[2])")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match the TOC's ## Version: $version"
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "ADDON=$(python3 -c "import sys; sys.path.insert(0, 'tools'); import package; print(package.addon()[0])")" >> "$GITHUB_ENV"
+
+      - name: Run the addon in Lua 5.1 against a mock of Forever's API
+        run: |
+          python3 -m pip install --quiet lupa
+          python3 tools/test/run.py
+
+      - name: Build the zips
+        run: |
+          python3 tools/package.py
+          python3 tools/changelog.py "$VERSION" > dist/notes.md
+
+      # Re-running the workflow for a tag (after adding the CurseForge settings, say) replaces the zips
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title=$(sed -n 's/^## Title: *//p' "$ADDON/$ADDON.toc" | tr -d '\r')
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/"$ADDON"-*.zip --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" dist/"$ADDON"-*.zip \
+              --title "$title $VERSION" --notes-file dist/notes.md
+          fi
+
+      - name: Upload to CurseForge
+        if: env.CF_API_TOKEN != '' && env.CF_PROJECT_ID != ''
+        run: python3 tools/upload_curseforge.py "dist/$ADDON-$VERSION.zip" dist/notes.md

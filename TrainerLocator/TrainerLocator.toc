@@ -1,0 +1,16 @@
+## Interface: 16001
+## Title: Trainer Locator
+## Notes: Where every class trainer, weapon master, profession and riding trainer is, nearest first, with map pins.
+## Author: Ethan Elliott
+## Version: 1.0.0
+## SavedVariables: TrainerLocatorDB
+## SavedVariablesPerCharacter: TrainerLocatorCharDB
+## IconTexture: Interface\Icons\INV_Misc_Book_11
+## AddonCompartmentFunc: TrainerLocator_OnAddonCompartmentClick
+
+Data.lua
+Core.lua
+UI.lua
+MapPins.lua
+MapPins.xml
+Options.lua
