@@ -314,7 +314,7 @@ function S.options()
 	check(cat and cat.name == "Trainer Locator" and cat.registered, "a page in the game's options")
 	local names = {}
 	for name, v in pairs(MOCK.settings.variables) do names[#names + 1] = name end
-	check(#names == 4, "with its four settings")
+	check(#names == 5, "with its five settings")
 	TrainerLocator_OnAddonCompartmentClick()
 	check(TrainerLocatorFrame:IsShown(), "the minimap's addon menu opens it")
 	TrainerLocator_Toggle()
@@ -322,6 +322,61 @@ function S.options()
 	check(BINDING_NAME_TRAINERLOCATOR_TOGGLE ~= nil, "the binding has a name")
 	MOCK.Slash("/trainers options")
 	check(MOCK.settings.opened == cat:GetID(), "/trainers options opens the page")
+end
+
+-- The minimap button: where it sits, what clicks do, dragging it round the edge, hiding it
+function S.minimap()
+	Login()
+	local b = TrainerLocatorMinimapButton
+	check(b and b:GetParent() == Minimap and b:IsShown(), "a button on the minimap")
+	local point, rel, relPoint, x, y = b:GetPoint(1)
+	local r = 99 + 5
+	check(point == "CENTER" and rel == Minimap and relPoint == "CENTER"
+		and math.abs(x + r * math.sqrt(0.5)) < 1e-6 and math.abs(y + r * math.sqrt(0.5)) < 1e-6,
+		"it starts on the edge at the bottom left")
+	b:_Fire("OnEnter", false)
+	local tip = MOCK.TooltipText()
+	check(has(tip, "Trainer Locator") and has(tip, "Right-click for options") and has(tip, "Drag"), "its tooltip says what it does")
+	b:_Fire("OnLeave", false)
+
+	b:Click("LeftButton")
+	check(TrainerLocatorFrame:IsShown(), "a click opens the window")
+	b:Click("LeftButton")
+	check(not TrainerLocatorFrame:IsShown(), "another closes it")
+	b:Click("RightButton")
+	check(MOCK.settings.opened ~= nil, "right-click opens the options")
+
+	-- drag it to the top of the minimap, at a UI scale that isn't 1
+	MOCK.uiScale = 0.65
+	b:_Fire("OnDragStart", "LeftButton")
+	MOCK.cursor = { 1800, 950 + 300 }
+	local update = b:GetScript("OnUpdate")
+	check(update ~= nil, "dragging follows the cursor")
+	update(b, 0.02)
+	b:_Fire("OnDragStop")
+	check(b:GetScript("OnUpdate") == nil, "and stops when you let go")
+	check(math.abs(ns.db.minimapAngle - 90) < 1e-6, "its new spot is saved (straight up is 90 degrees)")
+	_, _, _, x, y = b:GetPoint(1)
+	check(math.abs(x) < 1e-6 and math.abs(y - r) < 1e-6, "and it sits at the top of the edge")
+	MOCK.uiScale = 1
+
+	-- the options page and the slash command hide and show it
+	local setting = MOCK.settings.variables.TRAINERLOCATOR_MINIMAP_BUTTON
+	check(setting and setting:GetValue() == true, "the options page has it, switched on")
+	setting:SetValue(false)
+	check(not b:IsShown() and ns.db.minimapButton == false, "switching it off hides the button")
+	MOCK.Slash("/trainers minimap")
+	check(b:IsShown() and ns.db.minimapButton == true, "/trainers minimap brings it back")
+	check(has(MOCK.chat[#MOCK.chat], "Minimap button shown"), "and says so")
+
+	-- a square minimap from a minimap addon: corners follow the square's edge
+	function GetMinimapShape() return "SQUARE" end
+	ns.db.minimapAngle = 45
+	ns.MinimapButton.Update()
+	_, _, _, x, y = b:GetPoint(1)
+	local corner = r - 10 * math.sqrt(0.5)   -- just inside the corner, as minimap button libraries place it
+	check(math.abs(x - corner) < 1e-6 and math.abs(y - corner) < 1e-6, "on a square minimap it sits in the corner")
+	GetMinimapShape = nil
 end
 
 -- Every trainer in the data draws a row without error, and every one has somewhere to be

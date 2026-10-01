@@ -275,6 +275,14 @@ end
 function Frame:SetUserPlaced(v) assert(type(v) == "boolean"); self._userPlaced = v end
 function Frame:SetScale(s) assert(finite(s) and s > 0, "bad scale"); self._scale = s end
 function Frame:GetScale() return self._scale or 1 end
+function Frame:GetEffectiveScale()
+	local scale, f = (MOCK.uiScale or 1), self
+	while f do
+		scale = scale * (f._scale or 1)
+		f = f._parent
+	end
+	return scale
+end
 function Frame:IsProtected() return false, false end
 function Frame:IsMouseOver() return false end
 -- BackdropTemplate
@@ -405,6 +413,16 @@ end
 
 UIParent = CreateFrame("Frame", "UIParent")
 UIParent:SetSize(1920, 1080)
+
+-- The minimap, as Blizzard_Minimap builds it on Forever: a 198 x 198 round map near the top right.
+-- GetCenter and GetCursorPosition are in screen units; the cursor's are scaled by the UI scale.
+Minimap = CreateFrame("Frame", "Minimap", UIParent)
+Minimap:SetSize(198, 198)
+MOCK.minimapCenter = { 1800, 950 }
+MOCK.uiScale = 1
+MOCK.cursor = { 0, 0 }
+function Minimap:GetCenter() return MOCK.minimapCenter[1], MOCK.minimapCenter[2] end
+function GetCursorPosition() return MOCK.cursor[1] * MOCK.uiScale, MOCK.cursor[2] * MOCK.uiScale end
 UISpecialFrames = {}
 function tinsert(t, v) table.insert(t, v) end
 function strtrim(s) return (s:gsub("^%s+", ""):gsub("%s+$", "")) end

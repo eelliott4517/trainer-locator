@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.0
+
+- A minimap button: click it for the trainer list, right-click for the options, and drag it to
+  move it around the minimap's edge (it remembers where). Hide or show it from the options page or
+  with `/trainers minimap`.
+
 ## 1.0.0
 
 - A window listing every trainer in WoW: Forever by kind: each class, weapon masters, the nine

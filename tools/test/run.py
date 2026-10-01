@@ -9,7 +9,7 @@ import sys
 import lupa.lua51 as lua51
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SCENARIOS = ["basics", "professions", "search", "waypoint", "pins", "otherfaction", "lowtrainer", "instance", "options", "alldata"]
+SCENARIOS = ["basics", "professions", "search", "waypoint", "pins", "otherfaction", "lowtrainer", "instance", "options", "minimap", "alldata"]
 
 failed = 0
 for scenario in sys.argv[1:] or SCENARIOS:

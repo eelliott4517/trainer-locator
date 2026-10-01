@@ -11,6 +11,8 @@ local TOGGLES = {
 		"Clicking a trainer opens the world map where they are, as well as putting the map pin on them." },
 	{ "showOther", "TRAINERLOCATOR_SHOW_OTHER", "List the other faction's trainers",
 		"Also lists trainers who won't talk to you, greyed out." },
+	{ "minimapButton", "TRAINERLOCATOR_MINIMAP_BUTTON", "Show the minimap button",
+		"A button on the edge of the minimap that opens the trainer list. Drag it to move it around the minimap." },
 }
 
 function ns.RegisterOptions()
@@ -26,6 +28,7 @@ function ns.RegisterOptions()
 				ns.db[key] = value and true or false
 				ns.UI.RefreshIfShown()
 				if ns.Pins then ns.Pins.Refresh() end
+				if ns.MinimapButton then ns.MinimapButton.Update() end
 			end)
 		Settings.CreateCheckbox(cat, setting, t[4])
 	end

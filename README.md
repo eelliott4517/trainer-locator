@@ -4,8 +4,10 @@ A WoW: Forever addon that shows where every trainer is: class trainers, weapon m
 and secondary-skill trainers, riding, pet and portal trainers. Pick a kind and it lists every one in
 the world, nearest first, grouped by continent. Click one to put the game's map pin on them.
 
-- `/trainers` (or `/tl`) opens the window. The minimap's addon menu and a key binding (Options >
-  Keybindings > AddOns) open it too.
+- `/trainers` (or `/tl`) opens the window. So do the book button on the minimap's edge, the
+  minimap's addon menu and a key binding (Options > Keybindings > AddOns).
+- Drag the minimap button to move it around the minimap; right-click it for the options.
+  `/trainers minimap` (or the options page) hides or shows it.
 - `/trainers alchemy`, `/trainers mage` or `/trainers weapon` opens it on that kind. Anything else
   searches every trainer by name, title or zone: `/trainers ironforge`.
 - It starts on your class's trainers. Distances follow you as you walk.

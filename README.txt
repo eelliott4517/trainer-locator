@@ -1,4 +1,4 @@
-Trainer Locator 1.0.0
+Trainer Locator 1.1.0
 Shows where every trainer in WoW: Forever is: class trainers, weapon masters, profession and
 secondary-skill trainers, riding, pet and portal trainers. Pick a kind and it lists every one,
 nearest first. Click one to put the game's map pin on them.
@@ -17,7 +17,9 @@ Then restart WoW. A /reload won't pick up a new addon. If the AddOns list marks 
 out of date, tick "Load out of date AddOns".
 
 USING IT
-- Type /trainers (or /tl), or open it from the minimap's addon menu. It starts on your class.
+- Type /trainers (or /tl), or click the book button on the edge of the minimap. It starts on
+  your class. Drag that button to move it around the minimap, right-click it for the options,
+  and type /trainers minimap to hide or show it.
 - Pick another kind from the menu at the top, or type in the search box to find a trainer,
   a title or a zone. /trainers alchemy opens it on Alchemy; /trainers ironforge searches.
 - Click a trainer to put the map pin on them (with the arrow in the world). Shift-click links

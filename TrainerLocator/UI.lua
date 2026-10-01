@@ -639,3 +639,128 @@ function UI.SetScale(scale)
 	ns.db.scale = scale
 	if panel then panel:SetScale(scale) end
 end
+
+---------------------------------------------------------------- minimap button
+-- A round button on the minimap's edge, in the style most addons use: click opens the window,
+-- right-click the options, and dragging slides it around the edge. Where it sits is saved.
+local MinimapButton = {}
+ns.MinimapButton = MinimapButton
+local mapButton
+local EDGE_PAD = 5   -- how far past the map's edge the button's centre sits
+
+-- Which quadrants of a minimap are round. Blizzard's is round all the way; minimap addons that
+-- square it off say so through GetMinimapShape.
+local SHAPES = {
+	ROUND = { true, true, true, true },
+	SQUARE = { false, false, false, false },
+	["CORNER-TOPLEFT"] = { false, false, false, true },
+	["CORNER-TOPRIGHT"] = { false, false, true, false },
+	["CORNER-BOTTOMLEFT"] = { false, true, false, false },
+	["CORNER-BOTTOMRIGHT"] = { true, false, false, false },
+	["SIDE-LEFT"] = { false, true, false, true },
+	["SIDE-RIGHT"] = { true, false, true, false },
+	["SIDE-TOP"] = { false, false, true, true },
+	["SIDE-BOTTOM"] = { true, true, false, false },
+	["TRICORNER-TOPLEFT"] = { false, true, true, true },
+	["TRICORNER-TOPRIGHT"] = { true, false, true, true },
+	["TRICORNER-BOTTOMLEFT"] = { true, true, false, true },
+	["TRICORNER-BOTTOMRIGHT"] = { true, true, true, false },
+}
+
+local function PlaceOnMinimap(angle)
+	local a = math.rad(angle)
+	local x, y = math.cos(a), math.sin(a)
+	local q = 1
+	if x < 0 then q = q + 1 end
+	if y > 0 then q = q + 2 end
+	local shape = SHAPES[GetMinimapShape and GetMinimapShape() or "ROUND"] or SHAPES.ROUND
+	local w = Minimap:GetWidth() / 2 + EDGE_PAD
+	local h = Minimap:GetHeight() / 2 + EDGE_PAD
+	if shape[q] then
+		x, y = x * w, y * h
+	else
+		-- a square corner: follow the edge out to the corner instead of the circle
+		local dw, dh = math.sqrt(2 * w ^ 2) - 10, math.sqrt(2 * h ^ 2) - 10
+		x = math.max(-w, math.min(x * dw, w))
+		y = math.max(-h, math.min(y * dh, h))
+	end
+	mapButton:ClearAllPoints()
+	mapButton:SetPoint("CENTER", Minimap, "CENTER", x, y)
+end
+
+local function FollowCursor()
+	local mx, my = Minimap:GetCenter()
+	if not mx then return end
+	local px, py = GetCursorPosition()
+	local scale = Minimap:GetEffectiveScale()
+	px, py = px / scale, py / scale
+	ns.db.minimapAngle = math.deg(math.atan2(py - my, px - mx)) % 360
+	PlaceOnMinimap(ns.db.minimapAngle)
+end
+
+function MinimapButton.Create()
+	if mapButton or not Minimap then return end
+	mapButton = CreateFrame("Button", "TrainerLocatorMinimapButton", Minimap)
+	mapButton:SetSize(31, 31)
+	mapButton:SetFrameStrata("MEDIUM")
+	mapButton:SetFrameLevel(8)
+	mapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+	mapButton:RegisterForDrag("LeftButton")
+	mapButton:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
+	local back = mapButton:CreateTexture(nil, "BACKGROUND")
+	back:SetSize(24, 24)
+	back:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
+	back:SetPoint("CENTER", mapButton, "CENTER", 0, 0)
+	local icon = mapButton:CreateTexture(nil, "ARTWORK")
+	icon:SetSize(18, 18)
+	icon:SetTexture(PORTRAIT)
+	icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
+	icon:SetPoint("CENTER", mapButton, "CENTER", 0, 0)
+	local ring = mapButton:CreateTexture(nil, "OVERLAY")
+	ring:SetSize(50, 50)
+	ring:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
+	ring:SetPoint("TOPLEFT", mapButton, "TOPLEFT", 0, 0)
+	mapButton.icon = icon
+
+	mapButton:SetScript("OnClick", function(_, mouse)
+		if mouse == "RightButton" then ns.OpenOptions() else UI.Toggle() end
+	end)
+	-- the icon dips a pixel while it's held, like Blizzard's minimap buttons
+	mapButton:SetScript("OnMouseDown", function() icon:SetPoint("CENTER", mapButton, "CENTER", 1, -1) end)
+	mapButton:SetScript("OnMouseUp", function() icon:SetPoint("CENTER", mapButton, "CENTER", 0, 0) end)
+	mapButton:SetScript("OnDragStart", function(self)
+		self:LockHighlight()
+		GameTooltip:Hide()
+		self:SetScript("OnUpdate", FollowCursor)
+	end)
+	mapButton:SetScript("OnDragStop", function(self)
+		self:SetScript("OnUpdate", nil)
+		self:UnlockHighlight()
+		icon:SetPoint("CENTER", mapButton, "CENTER", 0, 0)
+	end)
+	mapButton:SetScript("OnEnter", function(self)
+		GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+		GameTooltip:SetText("Trainer Locator", 1, 1, 1)
+		TipLine("Click to open the trainer list.", C.green)
+		TipLine("Right-click for options. Drag to move this button.", C.green)
+		GameTooltip:Show()
+	end)
+	mapButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+	MinimapButton.Update()
+end
+
+function MinimapButton.Update()
+	if not mapButton then return end
+	if ns.db.minimapButton then
+		PlaceOnMinimap(ns.db.minimapAngle or 225)
+		mapButton:Show()
+	else
+		mapButton:Hide()
+	end
+end
+
+function MinimapButton.Toggle()
+	ns.db.minimapButton = not ns.db.minimapButton
+	MinimapButton.Update()
+	return ns.db.minimapButton
+end

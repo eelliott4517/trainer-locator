@@ -345,6 +345,8 @@ local DEFAULTS = {
 	mapPins = true,        -- show the selection on the world map
 	openMap = true,        -- open the map at a trainer when you set a waypoint
 	showOther = false,     -- include the other faction's trainers
+	minimapButton = true,  -- the button on the minimap's edge
+	minimapAngle = 225,    -- where on the edge, in degrees (225 is bottom left)
 }
 local CHAR_DEFAULTS = {
 	selection = nil,       -- the last category picked
@@ -380,6 +382,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
 		ns.RefreshPlayer()
 		if ns.RegisterOptions then ns.RegisterOptions() end
 		if ns.Pins then ns.Pins.Register() end
+		if ns.MinimapButton then ns.MinimapButton.Create() end
 	elseif event == "PLAYER_LEVEL_UP" then
 		ns.RefreshPlayer()
 		if type(arg1) == "number" then ns.player.level = arg1 end
@@ -439,8 +442,12 @@ SlashCmdList.TRAINERLOCATOR = function(msg)
 	msg = strtrim(msg or ""):lower()
 	if msg == "options" or msg == "config" then
 		ns.OpenOptions()
+	elseif msg == "minimap" then
+		local shown = ns.MinimapButton.Toggle()
+		ns.Print(shown and "Minimap button shown. Drag it to move it around the minimap." or
+			"Minimap button hidden. /trainers minimap brings it back.")
 	elseif msg == "help" then
-		ns.Print("/trainers opens the window. /trainers <search> opens it searching, like /trainers alchemy. /trainers options opens the settings.")
+		ns.Print("/trainers opens the window. /trainers <search> opens it searching, like /trainers alchemy. /trainers options opens the settings. /trainers minimap shows or hides the minimap button.")
 	elseif msg == "" then
 		ns.UI.Toggle()
 	else
