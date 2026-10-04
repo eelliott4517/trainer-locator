@@ -1,4 +1,4 @@
-Trainer Locator 1.1.0
+Trainer Locator 1.2.0
 Shows where every trainer in WoW: Forever is: class trainers, weapon masters, profession and
 secondary-skill trainers, riding, pet and portal trainers. Pick a kind and it lists every one,
 nearest first. Click one to put the game's map pin on them.

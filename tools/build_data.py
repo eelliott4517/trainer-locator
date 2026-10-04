@@ -4,19 +4,24 @@
 
 Reads:
   data/wowhead/scrape.json   every NPC Wowhead's WoW: Forever database flags as a trainer (the
-                             npcs?filter=28;1;0 list), with its map spots (g_mapperData) and its
-                             Teaches tabs; made by scrape_wowhead.js
+                             npcs?filter=28;1;0 list) and the Forever trainers it doesn't flag
+                             (scrape_wowhead.js's EXTRA list), with their map spots (g_mapperData)
+                             and Teaches tabs; made by scrape_wowhead.js
   data/db2/UiMap.csv         Forever 1.60.1's map tables from wago.tools (zone names, continents,
   data/db2/UiMapAssignment.csv   and the world rectangle each map shows)
   data/cmangos_trainers.json vanilla trainers' spawns, to pick Wowhead's right spots (extract_cmangos.py)
+  data/cmangos_teach.json    what vanilla trainers teach by cMaNGOS: trainer type, class and the
+                             skills their spells need (extract_cmangos.py)
 
 Each trainer gets one entry per thing it teaches: a class's spells, a profession (with the ranks it
-trains), weapon skills, riding, pet skills, mage portals, or anything else. Vendors Wowhead lists
-as trainers that only carry its placeholder hunter-pet list are left out.
+trains), weapon skills, riding, pet skills, mage portals, or anything else. That comes from the
+Teaches tabs; a vanilla trainer whose page has none gets it from cMaNGOS, and an EXTRA one from its
+title. Vendors Wowhead lists as trainers that only carry its placeholder hunter-pet list are left out.
 """
 import csv
 import json
 import os
+import re
 import sys
 from collections import Counter
 
@@ -26,6 +31,7 @@ OUT = os.path.join(ROOT, "TrainerLocator", "Data.lua")
 
 CLASS_BITS = {1: "WARRIOR", 2: "PALADIN", 4: "HUNTER", 8: "ROGUE", 16: "PRIEST", 64: "SHAMAN",
               128: "MAGE", 256: "WARLOCK", 1024: "DRUID"}
+CLASS_IDS = {bit.bit_length(): token for bit, token in CLASS_BITS.items()}   # 1 WARRIOR .. 11 DRUID
 PROF_NAMES = {171: "Alchemy", 164: "Blacksmithing", 333: "Enchanting", 202: "Engineering", 182: "Herbalism",
               165: "Leatherworking", 186: "Mining", 393: "Skinning", 197: "Tailoring", 185: "Cooking", 129: "First Aid",
               356: "Fishing"}
@@ -41,6 +47,33 @@ WEAPONS = ["One-Handed Axes", "Two-Handed Axes", "One-Handed Maces", "Two-Handed
 MAX_SPAWNS = 6
 NEAR = 4.0      # map percent: sightings this close are one spot
 MATCH = 2.5     # map percent: a spot this close to the cMaNGOS spawn is it
+
+# cMaNGOS's trainer types (creature_template.TrainerType)
+CM_CLASS, CM_RIDING, CM_TRADESKILL, CM_PET = 0, 1, 2, 3
+
+# What a title says someone trains, for the trainers Wowhead doesn't flag (scrape_wowhead.js's EXTRA
+# list) when their page has no Teaches tab either
+TITLE_KINDS = [
+    (re.compile(r"\b(%s) Trainer\b" % "|".join(t.title() for t in CLASS_BITS.values())), "class"),
+    (re.compile(r"\bPet Trainer\b"), "pet"),
+    (re.compile(r"\bPortal Trainer\b"), "portal"),
+    (re.compile(r"\bRiding\b"), "riding"),
+    (re.compile(r"\bWeapons? (?:Trainer|Master)\b"), "weapon"),
+]
+TITLE_PROFS = [
+    (171, r"Alchemist|Alchemy"),
+    (164, r"Blacksmith|Armorsmith|Weaponsmith|Swordsmith|Axesmith|Hammersmith|Weapon Crafter|Armor Crafter"),
+    (333, r"Enchanter|Enchanting"),
+    (202, r"Engineer"),
+    (182, r"Herbalist|Herbalism"),
+    (165, r"Leatherworker|Leathercrafter|Leatherworking"),
+    (186, r"\bMiner\b|\bMining\b"),
+    (393, r"Skinner|Skinning"),
+    (197, r"\bTailor"),
+    (185, r"\bCook\b|\bCooking\b|\bChef\b"),
+    (129, r"First Aid|Physician|Surgeon"),
+    (356, r"Fisherman|Fishing"),
+]
 
 # spell row fields, as scrape_wowhead.js keeps them
 ID, NAME, LEVEL, SKILL, LEARNEDAT, COST, CHRCLASS, REQCLASS, CAT, RANK = range(10)
@@ -100,30 +133,40 @@ class Placer:
     For some maps Wowhead lists every NPC twice: where it stands, and that spot projected onto
     another client's map of the same place (a different size, so the copy sits a scale and shift
     away). Vanilla NPCs settle it: their cMaNGOS spawn, put on Forever's map with Forever's own
-    bounds, lands on the real spot. The copies they leave behind give each map's scale and shift,
-    which then clears the copies off Forever's new NPCs, who have no cMaNGOS spawn."""
+    bounds, lands on the real spot. The copies they leave behind give each map's scale and shift.
+    That's fitted first, from every vanilla NPC (learn, then fit), and then places them all: it
+    puts back the vanilla NPCs Wowhead lists only by their copy, and clears the copies off
+    Forever's new NPCs, who have no cMaNGOS spawn."""
 
     def __init__(self, bounds, cmangos):
         self.bounds, self.cmangos = bounds, cmangos
         self.pairs = {}         # [uiMapID] = [(real spot, copy)]
+        self.shift = {}         # [uiMapID] = ((a, b), (c, d)): a copy sits at a x + b, c y + d
         self.stats = Counter()
+        self.names = {}         # [what happened] = names, for the spots worth a second look
 
-    def vanilla(self, npc_id, clusters):
-        spawns = self.cmangos.get(str(npc_id))
-        if not spawns:
-            return None
-        truth = [p for c in clusters for s in spawns for p in [project(self.bounds, c[0], s)] if p]
+    def note(self, what, name):
+        self.stats[what] += 1
+        self.names.setdefault(what, []).append(name)
+
+    def spawns_on(self, npc_id, clusters):
+        """The NPC's cMaNGOS spawns, put on each map Wowhead shows it on ([] for Forever's own NPCs)"""
+        spawns = self.cmangos.get(str(npc_id)) or []
+        maps = sorted({c[0] for c in clusters})
+        return [p for m in maps for s in spawns for p in [project(self.bounds, m, s)] if p]
+
+    def learn(self, npc_id, clusters):
+        """First pass, over every NPC: a vanilla NPC seen on its spawn and off it gives (real spot,
+        copy) pairs"""
+        truth = self.spawns_on(npc_id, clusters)
         real = [c for c in clusters if any(close(c, t, MATCH) for t in truth)]
         if not real:
-            self.stats["vanilla, moved in Forever"] += 1
-            return clusters
+            return
         for c in clusters:
             if c not in real:
                 k = min((r for r in real if r[0] == c[0]), key=lambda r: (r[1] - c[1]) ** 2 + (r[2] - c[2]) ** 2, default=None)
                 if k:
                     self.pairs.setdefault(c[0], []).append((k, c))
-        self.stats["vanilla, checked" + (" (copies dropped)" if len(real) < len(clusters) else "")] += 1
-        return real
 
     def fit(self):
         """x_copy = a x + b and y_copy = c y + d for each map with enough copies"""
@@ -136,8 +179,43 @@ class Placer:
             if fx and fy:
                 self.shift[m] = (fx, fy)
 
-    def new(self, clusters):
-        """Forever's own NPCs: drop the spots that are another spot's copy"""
+    def unshift(self, c):
+        """Where the NPC a copy was made from stands; None on maps Wowhead doesn't copy"""
+        sh = self.shift.get(c[0])
+        if not sh:
+            return None
+        (a, b), (cc, d) = sh
+        return (c[0], (c[1] - b) / a, (c[2] - d) / cc)
+
+    def vanilla(self, npc_id, name, clusters):
+        """A vanilla NPC's spots (after fit); None for Forever's own NPCs"""
+        if not self.cmangos.get(str(npc_id)):
+            return None
+        truth = self.spawns_on(npc_id, clusters)
+        real = [c for c in clusters if any(close(c, t, MATCH) for t in truth)]
+        if real:
+            self.stats["vanilla, checked" + (" (copies dropped)" if len(real) < len(clusters) else "")] += 1
+            return real
+        # None of its spots is on its spawn. On a map Wowhead copies it may have kept only the copy:
+        # undone, that lands back on the spawn.
+        back = [u for c in clusters for u in [self.unshift(c)] if u and any(close(u, t, MATCH) for t in truth)]
+        if back:
+            self.note("vanilla, copy put back", name)
+            return back
+        kept = self.drop_copies(clusters)
+        home = dedupe([t for t in truth if 0 <= t[1] <= 100 and 0 <= t[2] <= 100])
+        if home and len(kept) == len(clusters) and all(c[0] in self.shift for c in clusters):
+            # only spots on copied maps, none of them a copy of another, and too far from the spawn to
+            # undo (one that wanders): its cMaNGOS spawn
+            self.note("vanilla, at its cMaNGOS spawn", name)
+            return home
+        # it stands somewhere else in Forever: a spot on a map Wowhead doesn't copy, or a spot and
+        # its copy side by side
+        self.note("vanilla, moved in Forever", name)
+        return kept
+
+    def drop_copies(self, clusters):
+        """The spots that aren't another of the NPC's spots' copy"""
         out = []
         for c in clusters:
             copy = False
@@ -149,8 +227,21 @@ class Placer:
                         copy = True
             if not copy:
                 out.append(c)
+        return out
+
+    def new(self, clusters):
+        """Forever's own NPCs: drop the spots that are another spot's copy"""
+        out = self.drop_copies(clusters)
         self.stats["new" + (" (copies dropped)" if len(out) < len(clusters) else "")] += 1
         return out
+
+
+def dedupe(spots):
+    out = []
+    for s in spots:
+        if not any(close(k, s) for k in out):
+            out.append(s)
+    return out
 
 
 def linfit(xs, ys):
@@ -167,7 +258,12 @@ def linfit(xs, ys):
 
 
 def side_of(react):
-    a, h = (react or [None, None]) + [None] * (2 - len(react or []))
+    """1 Alliance, 2 Horde, 3 both: who'll talk to the NPC (it's friendly or neutral to them).
+    Wowhead's react is [Alliance, Horde]: 1 friendly, 0 neutral, -1 hostile, null not recorded. With
+    neither recorded (Forever's new neutral towns, like Riverglades) it's listed for both."""
+    a, h = (list(react or []) + [None, None])[:2]
+    if a is None and h is None:
+        return 3
     return (1 if a is not None and a >= 0 else 0) | (2 if h is not None and h >= 0 else 0)
 
 
@@ -178,8 +274,54 @@ def class_of(mask):
     return None
 
 
-def classify(npc):
-    """The entries of what an NPC teaches, or [] for none worth listing."""
+def from_cmangos(cm):
+    """What a vanilla trainer teaches by cMaNGOS (a cmangos_teach.json record), for the ones whose
+    Wowhead page has no Teaches tab: a class trainer's class, spell count and top level; a profession
+    trainer's professions, with the ranks it teaches and how many recipes, up to what skill"""
+    kind = cm.get("type")
+    if kind == CM_CLASS and cm.get("class") in CLASS_IDS:
+        return [["class", CLASS_IDS[cm["class"]], {"max": cm["level"], "n": cm["n"]}]]
+    if kind == CM_PET:
+        return [["pet", None, {}]]
+    if kind == CM_RIDING:
+        return [["riding", None, {}]]
+    if kind != CM_TRADESKILL:
+        return []
+    skills = {int(k): v for k, v in (cm.get("skills") or {}).items()}
+    ranks = {}
+    for skill, rank in cm.get("ranks") or []:
+        ranks.setdefault(skill, []).append(rank)
+    out = []
+    for prof in sorted((set(skills) | set(ranks)) & PROFESSIONS):
+        n, top = skills.get(prof, (0, 0))
+        info = {"n": n}
+        if prof in ranks:
+            info["rank"], info["low"] = max(ranks[prof]), min(ranks[prof])
+        if n and top:
+            info["top"] = top
+        out.append(["prof", prof, info])
+    return out
+
+
+def from_title(tag):
+    """What a title says someone trains ("Shaman Trainer", "Weapons Trainer", "Expert Enchanter"):
+    only the kind. How far a profession trainer goes isn't in it: Forever's own "Expert" trainers
+    teach Expert, vanilla's teach Journeyman."""
+    tag = tag or ""
+    for pattern, kind in TITLE_KINDS:
+        m = pattern.search(tag)
+        if m:
+            return [[kind, m.group(1).upper() if kind == "class" else None, {}]]
+    for prof, pattern in TITLE_PROFS:
+        if re.search(pattern, tag):
+            return [["prof", prof, {}]]
+    return []
+
+
+def classify(npc, cm=None):
+    """The entries of what an NPC teaches, or [] for none worth listing. cm is its cMaNGOS record
+    (cmangos_teach.json), the fallback for a vanilla trainer whose page has no Teaches tab; one
+    Wowhead doesn't flag as a trainer (scrape_wowhead.js's EXTRA list) falls back on its title."""
     tag = npc["list"].get("tag") or ""
     teach = npc.get("teach") or {}
     ability = teach.get("teaches-ability", [])
@@ -244,6 +386,10 @@ def classify(npc):
         names = sorted({s[NAME] for s in recipe + other + [s for s in ability if s[CAT] != -3]})
         if names:
             out.append(["other", None, {"s": names}])
+    if not out and cm:
+        out = from_cmangos(cm)
+    if not out and npc.get("extra"):
+        out = from_title(tag)
     return out
 
 
@@ -276,32 +422,53 @@ def teach_lua(entry):
     return "{" + ", ".join(parts) + "}"
 
 
-def main():
-    src = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "data", "wowhead", "scrape.json")
-    scrape = json.load(open(src))
-    maps = load_maps()
-    placer = Placer(load_bounds(), json.load(open(os.path.join(HERE, "data", "cmangos_trainers.json"))))
-    found, dropped, unplaced = [], Counter(), []
+def load_inputs(scrape_path=None):
+    """Everything build() reads, from tools/data"""
+    data = os.path.join(HERE, "data")
+    scrape = json.load(open(scrape_path or os.path.join(data, "wowhead", "scrape.json")))
+    return dict(scrape=scrape, maps=load_maps(), bounds=load_bounds(),
+                cmangos=json.load(open(os.path.join(data, "cmangos_trainers.json"))),
+                cm_teach=json.load(open(os.path.join(data, "cmangos_teach.json"))))
+
+
+def build(scrape, maps, bounds, cmangos, cm_teach):
+    """The trainers to list, the maps they need, and a report of what happened on the way"""
+    placer = Placer(bounds, cmangos)
+    found, dropped, unplaced, filled = [], Counter(), [], {}
     for npc_id, npc in sorted(scrape["npcs"].items(), key=lambda kv: int(kv[0])):
         if npc.get("missing"):
             dropped["no page"] += 1
             continue
-        teach = classify(npc)
+        teach = classify(npc, cm_teach.get(npc_id))
         if not teach:
-            dropped["placeholder pet list only"] += 1
+            dropped["placeholder pet list only" if npc.get("teach") else "nothing it teaches"] += 1
             continue
+        if not classify({k: v for k, v in npc.items() if k != "extra"}):
+            source = "cMaNGOS" if from_cmangos(cm_teach.get(npc_id) or {}) else "its title"
+            filled.setdefault(source, []).append(npc["list"]["name"])
         clusters = [c for c in clusters_of(npc.get("map")) if c[0] in maps]
         if not clusters:
             unplaced.append(f'{npc["list"]["name"]} ({npc_id})')
             continue
-        found.append((npc_id, npc, teach, clusters, placer.vanilla(npc_id, clusters)))
+        placer.learn(npc_id, clusters)
+        found.append((npc_id, npc, teach, clusters))
     placer.fit()
     trainers = []
-    for npc_id, npc, teach, clusters, real in found:
-        at = real if real is not None else placer.new(clusters)
+    for npc_id, npc, teach, clusters in found:
         lst = npc["list"]
+        at = placer.vanilla(npc_id, lst["name"], clusters)
+        if at is None:
+            at = placer.new(clusters)
         trainers.append({"id": int(npc_id), "name": lst["name"], "tag": lst.get("tag"), "side": side_of(lst.get("react")),
-                         "at": at[:MAX_SPAWNS], "teach": teach})
+                         "at": at[:MAX_SPAWNS], "teach": teach, "extra": bool(npc.get("extra"))})
+
+    # every pet trainer teaches the same pet skills: the ones cMaNGOS or a title filled in get the list
+    # the others have
+    lists = Counter(tuple(e[2]["s"]) for t in trainers for e in t["teach"] if e[0] == "pet" and e[2].get("s"))
+    for t in trainers:
+        for e in t["teach"]:
+            if e[0] == "pet" and not e[2].get("s") and lists:
+                e[2]["s"] = list(lists.most_common(1)[0][0])
 
     used = set()
     for t in trainers:
@@ -309,7 +476,12 @@ def main():
             while m and m in maps and m not in used:
                 used.add(m)
                 m = maps[m][1]
+    report = dict(dropped=dropped, unplaced=unplaced, filled=filled, placer=placer)
+    return trainers, used, report
 
+
+def render(trainers, used, maps):
+    """Data.lua's text"""
     lines = ["-- Generated by tools/build_data.py from Wowhead's WoW: Forever database. Don't edit by hand.",
              "local _, ns = ...", "ns.Data = {}", "",
              "-- [uiMapID] = { name, parent map, map type (2 continent, 3 zone) }", "ns.Data.maps = {"]
@@ -328,15 +500,30 @@ def main():
         teach = ", ".join(teach_lua(e) for e in t["teach"])
         lines.append(f"\t{{id = {t['id']}, name = {lua_str(t['name'])}{tag}, side = {t['side']}, at = {{{at}}}, teach = {{{teach}}}}},")
     lines += ["}", ""]
-    with open(OUT, "w", newline="\n") as f:
-        f.write("\n".join(lines))
+    return "\n".join(lines)
 
+
+def main():
+    inputs = load_inputs(sys.argv[1] if len(sys.argv) > 1 else None)
+    trainers, used, report = build(**inputs)
+    with open(OUT, "w", newline="\n") as f:
+        f.write(render(trainers, used, inputs["maps"]))
+
+    maps, placer = inputs["maps"], report["placer"]
     kinds = Counter(e[0] if e[0] != "prof" else f"prof {e[1]}" for t in trainers for e in t["teach"])
     print(f"{len(trainers)} trainers, {len(used)} maps -> {os.path.relpath(OUT, ROOT)}")
-    print("dropped:", dict(dropped), "| no map spot:", len(unplaced), ", ".join(unplaced[:12]))
+    print("dropped:", dict(report["dropped"]), "| no map spot:", len(report["unplaced"]), ", ".join(report["unplaced"][:12]))
+    for source, names in sorted(report["filled"].items()):
+        print(f"no Teaches tab, from {source}: {len(names)}:", ", ".join(names))
+    extras = [t for t in trainers if t["extra"]]
+    if extras:
+        print(f"not flagged as trainers on Wowhead (EXTRA): {len(extras)}:", ", ".join(
+            f"{t['name']} <{t['tag']}> side {t['side']} {' '.join(str(e[1] or e[0]) for e in t['teach'])}" for t in extras))
     print("by kind:", dict(sorted(kinds.items())))
     print("spots:", dict(placer.stats), "| maps with copies:",
           ", ".join(f"{maps[m][0]} x{a:.3f}{b:+.1f} y{c:.3f}{d:+.1f}" for m, ((a, b), (c, d)) in sorted(placer.shift.items())))
+    for what, names in sorted(placer.names.items()):
+        print(f"  {what}:", ", ".join(names))
 
 
 if __name__ == "__main__":

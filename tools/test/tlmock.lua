@@ -122,7 +122,10 @@ C_Map = {
 		assert(type(point) == "table" and point.uiMapID and point.position, "SetUserWaypoint wants a UiMapPoint")
 		-- Forever hands the waypoint back with a plain { x, y } position, not a Vector2D
 		MOCK.waypoint = { uiMapID = point.uiMapID, position = { x = point.position.x, y = point.position.y } }
+		-- MOCK.autoTrack: a client that tracks a new pin as it's placed
+		if MOCK.autoTrack then MOCK.superTracked = true end
 		MOCK.Fire("USER_WAYPOINT_UPDATED")
+		return true
 	end,
 	HasUserWaypoint = function() return MOCK.waypoint ~= nil end,
 	GetUserWaypoint = function() return MOCK.waypoint end,
@@ -135,6 +138,7 @@ C_Map = {
 }
 C_SuperTrack = {
 	SetSuperTrackedUserWaypoint = function(on) assert(type(on) == "boolean"); MOCK.superTracked = on end,
+	IsSuperTrackingUserWaypoint = function() return MOCK.superTracked == true end,
 }
 
 function OpenWorldMap(mapID)
@@ -163,6 +167,18 @@ function MapCanvasPinMixin:SetPosition(x, y)
 end
 function MapCanvasPinMixin:GetPosition() return self._x, self._y end
 function MapCanvasPinMixin:GetMap() return WorldMapFrame end
+-- As MapCanvas_DataProviderBase.lua has them: AcquirePin runs CheckMouseButtonPassthrough on every
+-- pin, which calls SetPassThroughButtons (restricted in combat, wowmock.lua)
+function MapCanvasPinMixin:ShouldMouseButtonBePassthrough(button) return button == "RightButton" end
+function MapCanvasPinMixin:CheckMouseButtonPassthrough(...)
+	self:SetPassThroughButtons()
+	local buttons = {}
+	for i = 1, select("#", ...) do
+		local button = select(i, ...)
+		if self:ShouldMouseButtonBePassthrough(button) then table.insert(buttons, button) end
+	end
+	self:SetPassThroughButtons(unpack(buttons))
+end
 
 WorldMapFrame = CreateFrame("Frame", "WorldMapFrame", UIParent)
 WorldMapFrame:Hide()
@@ -183,8 +199,20 @@ function WorldMapFrame:AcquirePin(template, ...)
 	local pin = CreateFrame("Frame", nil, self, template)
 	pin.pinTemplate = template
 	pin:OnAcquired(...)
+	-- Blizzard_MapCanvas.lua: "Most pins should pass through right clicks to allow the map to zoom out"
+	pin:CheckMouseButtonPassthrough("RightButton")
 	table.insert(self._pins, pin)
 	return pin
+end
+-- A right-click on the map itself: Forever's world map navigates on clicks (SetShouldNavigateOnClick)
+-- and doesn't zoom (SetShouldZoomInOnClick(false)), so it backs out to the parent map
+function WorldMapFrame:ShouldNavigateOnClick() return true end
+function WorldMapFrame:ShouldNavigateIgnoreZoneMapPositionData() return false end
+function WorldMapFrame:ShouldZoomInOnClick() return false end
+function WorldMapFrame:ZoomOut() MOCK.zoomedOut = true end
+function WorldMapFrame:NavigateToParentMap()
+	local info = C_Map.GetMapInfo(self:GetMapID())
+	if info.parentMapID > 0 then self:SetMapID(info.parentMapID) end
 end
 function WorldMapFrame:RemoveAllPinsByTemplate(template)
 	local keep = {}

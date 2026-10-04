@@ -285,6 +285,15 @@ function Frame:GetEffectiveScale()
 end
 function Frame:IsProtected() return false, false end
 function Frame:IsMouseOver() return false end
+-- Forever restricts this one (SimpleScriptRegionAPIDocumentation: HasRestrictions): addon code
+-- calling it in combat is blocked
+function Frame:SetPassThroughButtons(...)
+	if InCombatLockdown() then error("ADDON_ACTION_BLOCKED: SetPassThroughButtons() from addon code in combat", 2) end
+	for i = 1, select("#", ...) do
+		assert(({ LeftButton = 1, RightButton = 1, MiddleButton = 1, Button4 = 1, Button5 = 1 })[select(i, ...)], "SetPassThroughButtons wants mouse buttons")
+	end
+	self._passThrough = select("#", ...) > 0 and { ... } or nil
+end
 -- BackdropTemplate
 local function RequireBackdrop(self) assert(self._templates and self._templates.BackdropTemplate, "SetBackdrop without BackdropTemplate") end
 function Frame:SetBackdrop(b) RequireBackdrop(self); assert(type(b) == "table"); self._backdrop = b end

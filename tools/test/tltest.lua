@@ -252,6 +252,89 @@ function S.pins()
 	check(ns.db.mapPins == false and #MOCK.Pins() == 0, "the Show on map box takes them off")
 end
 
+-- In combat: the map's pins go up without SetPassThroughButtons, which addon code can't call then,
+-- and a right-click on one does what it does on the map, out of combat
+function S.combat()
+	MOCK.side, MOCK.classToken = "Alliance", "MAGE"
+	MOCK.pos = { 1453, 0.6, 0.7 }
+	Login()
+	MOCK.inCombat = true
+	local ok, err = pcall(MOCK.ShowMap, 1453)
+	check(ok, "opening Stormwind's map in combat puts its pins up without an error (" .. tostring(err) .. ")")
+	local pin = MOCK.Pins()[1]
+	check(pin ~= nil and pin:IsShown(), "the pins are there (" .. #MOCK.Pins() .. ")")
+	if not pin then return end
+	check(pin._passThrough == nil, "they skip SetPassThroughButtons")
+	ok, err = pcall(pin.OnMouseClickAction, pin, "RightButton")
+	check(ok and WorldMapFrame:GetMapID() == 1453, "a right-click on one in combat leaves the map alone (" .. tostring(err) .. ")")
+	MOCK.inCombat = false
+	pin:OnMouseClickAction("RightButton")
+	check(WorldMapFrame:GetMapID() == 1415, "out of combat it backs the map out to Eastern Kingdoms, as a right-click anywhere else on it does ("
+		.. tostring(WorldMapFrame:GetMapID()) .. ")")
+	check(MOCK.waypoint == nil, "without putting the map pin down")
+	-- a trainer clicked in the window in combat gets the map pin, but the map stays shut
+	MOCK.Slash("/trainers")
+	WorldMapFrame:Hide()
+	MOCK.inCombat = true
+	MOCK.openedMap = nil
+	local row = TrainerRows()[1]
+	ok, err = pcall(row.frame.Click, row.frame, "LeftButton")
+	check(ok and MOCK.waypoint ~= nil and MOCK.waypoint.uiMapID == row.frame.data.spawn[1], "a click in combat still puts the map pin on them (" .. tostring(err) .. ")")
+	check(MOCK.openedMap == nil and not WorldMapFrame:IsShown(), "but doesn't open the map")
+	MOCK.inCombat = false
+end
+
+-- Shift-click links a trainer's spot in chat and leaves the player's own map pin where it was
+function S.link()
+	MOCK.side, MOCK.classToken = "Alliance", "MAGE"
+	MOCK.pos = { 1453, 0.6, 0.7 }
+	Login()
+	MOCK.Slash("/trainers")
+	local function Rows()
+		local rows = TrainerRows()
+		local a = rows[1]
+		for i = 2, #rows do
+			local s = rows[i].frame.data.spawn
+			if s[1] ~= a.frame.data.spawn[1] or math.abs(s[2] - a.frame.data.spawn[2]) > 1 then return a, rows[i] end
+		end
+	end
+	local a, b = Rows()
+	local pick, other = a.frame.data, b.frame.data
+	local function ShiftClick(row)
+		MOCK.shift = true
+		row.frame:Click("LeftButton")
+		MOCK.shift = false
+		return MOCK.linked[#MOCK.linked] or ""
+	end
+	local function LinksTo(link, spawn)
+		local m, x, y = link:match("worldmap:(%d+):(%d+):(%d+)")
+		return m and tonumber(m) == spawn[1] and math.abs(tonumber(x) / 100 - spawn[2]) < 0.02 and math.abs(tonumber(y) / 100 - spawn[3]) < 0.02
+	end
+	local function PinOn(spawn)
+		local w = MOCK.waypoint
+		return w ~= nil and w.uiMapID == spawn[1] and math.abs(w.position.x * 100 - spawn[2]) < 1e-6 and math.abs(w.position.y * 100 - spawn[3]) < 1e-6
+	end
+
+	local link = ShiftClick(b)
+	check(has(link, other.trainer.name) and LinksTo(link, other.spawn), "shift-click links the spot: " .. MOCK.Plain(link))
+	check(MOCK.waypoint == nil and not MOCK.superTracked, "and leaves no map pin behind when there wasn't one")
+
+	a.frame:Click("LeftButton")
+	check(PinOn(pick.spawn) and MOCK.superTracked, "a click puts the map pin on " .. pick.trainer.name .. ", tracked")
+	a, b = Rows()
+	link = ShiftClick(b)
+	check(LinksTo(link, other.spawn), "linking " .. other.trainer.name .. " then links their spot")
+	check(PinOn(pick.spawn), "while the map pin stays on " .. pick.trainer.name)
+	check(MOCK.superTracked == true, "and stays tracked")
+
+	-- an untracked pin, on a client that tracks a pin as it's placed
+	C_SuperTrack.SetSuperTrackedUserWaypoint(false)
+	MOCK.autoTrack = true
+	link = ShiftClick(b)
+	MOCK.autoTrack = false
+	check(LinksTo(link, other.spawn) and PinOn(pick.spawn) and MOCK.superTracked == false, "an untracked pin stays put and untracked")
+end
+
 -- The other faction's trainers, greyed out
 function S.otherfaction()
 	MOCK.side, MOCK.classToken = "Alliance", "PALADIN"

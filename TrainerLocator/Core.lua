@@ -1,7 +1,7 @@
 -- Trainer Locator: shared state, the player, the trainer categories, filtering and distances.
 local ADDON, ns = ...
 
-ns.VERSION = "1.0.0"
+ns.VERSION = "1.2.0"
 
 -- The game's own text colors: Blizzard's color globals when the client has them, their WoW: Forever
 -- values otherwise
@@ -410,20 +410,44 @@ function ns.SetWaypoint(trainer, spawn)
 	end
 	ns.PlaySound("UI_MAP_WAYPOINT_CLICK_TO_PLACE")
 	ns.Print(string.format("%s, %s %s", ns.Paint("white", trainer.name), ns.MapName(mapID), ns.Coords(spawn)))
-	if ns.db.openMap and OpenWorldMap then OpenWorldMap(mapID) end
+	-- not in combat: the map opening from addon code then has its own pins hit a restricted call
+	-- (see MapPins.lua)
+	if ns.db.openMap and OpenWorldMap and not (InCombatLockdown and InCombatLockdown()) then OpenWorldMap(mapID) end
 	if ns.Pins then ns.Pins.Refresh() end
 	return placed
 end
 
 function ns.Coords(spawn) return string.format("%.1f, %.1f", spawn[2], spawn[3]) end
 
--- A chat link to the spot: the game's map pin link when it can make one
+-- Puts the player's own map pin back as it was before a link borrowed it (its arrow on or off as
+-- it was), or takes it off when there wasn't one
+local function RestoreWaypoint(point, tracked)
+	local x, y
+	if point then x, y = ns.XY(point.position) end
+	if type(x) == "number" and type(y) == "number" then
+		C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(point.uiMapID, x, y, point.z))
+	else
+		C_Map.ClearUserWaypoint()
+	end
+	local isTracked = C_SuperTrack and C_SuperTrack.IsSuperTrackingUserWaypoint
+	if isTracked and C_SuperTrack.SetSuperTrackedUserWaypoint and isTracked() ~= tracked then
+		C_SuperTrack.SetSuperTrackedUserWaypoint(tracked)
+	end
+end
+
+-- A chat link to the spot: the game's map pin link when it can make one. The game only links its
+-- own map pin, so the pin goes on the spot just long enough to make the link.
 function ns.LinkWaypoint(trainer, spawn)
 	spawn = spawn or trainer.at[1]
 	local link
 	if C_Map and C_Map.CanSetUserWaypointOnMap and C_Map.CanSetUserWaypointOnMap(spawn[1]) and C_Map.GetUserWaypointHyperlink then
-		C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(spawn[1], spawn[2] / 100, spawn[3] / 100))
-		link = C_Map.GetUserWaypointHyperlink()
+		local saved = C_Map.HasUserWaypoint and C_Map.HasUserWaypoint() and C_Map.GetUserWaypoint()
+		local isTracked = C_SuperTrack and C_SuperTrack.IsSuperTrackingUserWaypoint
+		local tracked = isTracked and isTracked() and true or false
+		if C_Map.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(spawn[1], spawn[2] / 100, spawn[3] / 100)) ~= false then
+			link = C_Map.GetUserWaypointHyperlink()
+		end
+		RestoreWaypoint(saved, tracked)
 	end
 	local text = trainer.name .. " " .. (link or (ns.MapName(spawn[1]) .. " " .. ns.Coords(spawn)))
 	-- into the chat line being typed, or a new one opened with it

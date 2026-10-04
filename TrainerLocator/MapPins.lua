@@ -10,6 +10,12 @@ local provider
 
 TrainerLocatorPinMixin = CreateFromMixins and CreateFromMixins(MapCanvasPinMixin or {}) or {}
 
+-- Blizzard's AcquirePin makes every pin pass right-clicks through to the map, so they still back it
+-- out, with SetPassThroughButtons. This client restricts that call: from addon code in combat it's
+-- blocked, so opening the map in combat errored. Like HereBeDragons' pins, these skip it, and pass
+-- the right-click on themselves (OnMouseClickAction).
+function TrainerLocatorPinMixin:SetPassThroughButtons() end
+
 function TrainerLocatorPinMixin:OnLoad()
 	if self.UseFrameLevelType then self:UseFrameLevelType("PIN_FRAME_LEVEL_AREA_POI") end
 	if self.SetScalingLimits then self:SetScalingLimits(1, 1.0, 1.2) end
@@ -29,7 +35,19 @@ end
 
 function TrainerLocatorPinMixin:OnMouseLeave() GameTooltip:Hide() end
 
+-- What the map does with a right-click anywhere else on it: back out to the parent map (or zoom
+-- out, on a map that zooms). Not in combat: the map changing from addon code would have Blizzard's
+-- own pins run into the same restriction.
+local function RightClickMap(map)
+	if not map or (InCombatLockdown and InCombatLockdown()) then return end
+	if map.ShouldNavigateOnClick and map:ShouldNavigateOnClick() and not map:ShouldNavigateIgnoreZoneMapPositionData() then
+		map:NavigateToParentMap()
+	end
+	if map.ShouldZoomInOnClick and map:ShouldZoomInOnClick() then map:ZoomOut() end
+end
+
 function TrainerLocatorPinMixin:OnMouseClickAction(button)
+	if button == "RightButton" then return RightClickMap(self:GetMap()) end
 	local row = self.row
 	if not row or button ~= "LeftButton" then return end
 	if IsShiftKeyDown and IsShiftKeyDown() then
