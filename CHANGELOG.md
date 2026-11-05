@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.2.1
+
+- Works with the live WoW: Forever client (1.60.1.70790). The Windows installer now installs into `_forever_`, the live client's folder, instead of the old beta folder `_classic_beta_`. Nothing the addon uses changed in the live build.
+
 ## 1.2.0
 
 - Seven trainers were pinned 100 to 325 yards from where they stand: Ander Germaine, Ilsa Corbin,

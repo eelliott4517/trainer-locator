@@ -490,6 +490,21 @@ function S.alldata()
 	print("    " .. table.concat(kinds, ", "))
 end
 
+-- What the October 8 review (build 1.60.1.70291) fixed
+function S.review()
+	-- Since build 70291 a frame's strata can be a secret, which can't be compared: the addon never
+	-- reads one (the mock has no GetFrameStrata, so a read on a path the tests run fails too)
+	local reads = {}
+	for line in io.lines(ADDON_DIR .. "TrainerLocator.toc") do
+		if line:match("%.lua%s*$") then
+			local fh = assert(io.open(ADDON_DIR .. line:match("^%s*(.-)%s*$")))
+			if fh:read("*a"):find("GetFrameStrata%s*%(") then table.insert(reads, line) end
+			fh:close()
+		end
+	end
+	check(#reads == 0, "the addon never reads a frame's strata " .. table.concat(reads, ", "))
+end
+
 local fn = S[SCENARIO]
 assert(fn, "no scenario " .. tostring(SCENARIO))
 fn()

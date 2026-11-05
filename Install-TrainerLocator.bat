@@ -2,11 +2,11 @@
 setlocal EnableExtensions DisableDelayedExpansion
 title Trainer Locator installer
 
-rem Installs the TrainerLocator addon into the WoW: Forever beta.
+rem Installs the TrainerLocator addon into WoW: Forever.
 rem Double-click it, or pass your World of Warcraft folder:
 rem   Install-TrainerLocator.bat "D:\Games\World of Warcraft"
 
-set "FLAVOR=_classic_beta_"
+set "FLAVOR=_forever_"
 set "SRC=%~dp0TrainerLocator"
 set "WOW="
 
@@ -39,7 +39,7 @@ for %%D in (C D E F G H) do (
 if defined WOW goto :found
 
 rem 4) Ask
-echo Couldn't find the WoW: Forever beta automatically.
+echo Couldn't find WoW: Forever automatically.
 echo Paste the path of your World of Warcraft folder and press Enter.
 echo Tip: open that folder in File Explorer, click the address bar and copy it.
 echo.
@@ -50,14 +50,14 @@ set "ANSWER=%ANSWER:"=%"
 call :consider "%ANSWER%"
 if defined WOW goto :found
 echo.
-echo That folder doesn't contain %FLAVOR%. Make sure the Forever beta is installed there.
+echo That folder doesn't contain %FLAVOR%. Make sure WoW: Forever is installed there.
 goto :fail
 
 :found
 set "GAME=%WOW%\%FLAVOR%"
 set "ADDONS=%GAME%\Interface\AddOns"
 set "DEST=%ADDONS%\TrainerLocator"
-echo Found the WoW: Forever beta in:
+echo Found WoW: Forever in:
 echo   "%GAME%"
 if not exist "%ADDONS%\" mkdir "%ADDONS%" 2>nul
 if not exist "%ADDONS%\" goto :denied
@@ -82,7 +82,7 @@ echo Start WoW: Forever and type /trainers.
 echo If the AddOns list marks it out of date, tick "Load out of date AddOns".
 goto :done
 
-rem Accepts the WoW folder itself, or a folder inside it such as _retail_, _classic_beta_ or its AddOns folder
+rem Accepts the WoW folder itself, or a folder inside it such as _retail_, _forever_ or its AddOns folder
 :consider
 if defined WOW exit /b 0
 set "CAND=%~1"

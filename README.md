@@ -63,7 +63,7 @@ with the pins, to check spots against the buildings they belong in.
 
 ## Install
 
-`sh tools/install.sh` copies it to the WoW: Forever beta client on macOS. A new addon needs a game
+`sh tools/install.sh` copies it to WoW: Forever client on macOS. A new addon needs a game
 restart. Updates just need a `/reload`.
 
 ![Trainer Locator](tools/preview.png)

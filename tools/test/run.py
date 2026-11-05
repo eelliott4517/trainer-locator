@@ -13,7 +13,7 @@ import test_build
 
 TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCENARIOS = ["build", "basics", "professions", "search", "waypoint", "link", "pins", "combat", "otherfaction", "lowtrainer",
-             "instance", "options", "minimap", "alldata"]
+             "instance", "options", "minimap", "alldata", "review"]
 
 failed = 0
 for scenario in sys.argv[1:] or SCENARIOS:
